@@ -1,0 +1,81 @@
+exports.up = async db => {
+  await db.schema.alterTable('branches', t => t.boolean('active').notNullable().defaultTo(true));
+  await db.schema.createTable('sdj_access', t => {
+    t.bigInteger('user_id').references('users.id').primary();
+    t.jsonb('grants').notNullable().defaultTo('[]');
+  });
+  await db.schema.createTable('sdj_parties', t => {
+    t.bigIncrements('id');
+    t.bigInteger('branch_id').notNullable().references('branches.id');
+    t.text('name').notNullable();
+    t.text('phone');
+    t.text('email');
+    t.text('address');
+    t.jsonb('roles').notNullable();
+    t.jsonb('terms').notNullable().defaultTo('{}');
+    t.boolean('active').notNullable().defaultTo(true);
+    t.index(['branch_id','id']);
+  });
+  await db.schema.createTable('sdj_bill_taxes', t => {
+    t.bigIncrements('id');
+    t.bigInteger('branch_id').notNullable().references('branches.id');
+    t.text('name').notNullable();
+    t.text('mode').notNullable().checkIn(['percentage','fixed']);
+    t.decimal('value',18,6).notNullable().checkPositive();
+    t.text('kind').notNullable().checkIn(['tax','fee']);
+    t.text('scope').notNullable().checkIn(['all','quote','estimate','invoice']);
+    t.integer('position').notNullable();
+    t.boolean('compound').notNullable();
+    t.boolean('active').notNullable();
+    t.index(['branch_id','active','position','id']);
+  });
+  await db.schema.createTable('sdj_order_workflows', t => {
+    t.bigIncrements('id');
+    t.bigInteger('branch_id').notNullable().references('branches.id');
+    t.bigInteger('customer_id').notNullable().references('customers.id');
+    t.text('state').notNullable().checkIn(['draft','confirmed','assigned','production','accepted','invoiced','handed_over']);
+    t.jsonb('specification').notNullable();
+    t.jsonb('job');
+    t.timestamp('first_issue_at',{useTz:true});
+    t.timestamp('accepted_at',{useTz:true});
+    t.decimal('advance',24,2).notNullable().defaultTo(0);
+    t.decimal('balance',24,2).notNullable().defaultTo(0);
+    t.timestamp('created_at',{useTz:true}).notNullable().defaultTo(db.fn.now());
+    t.index(['branch_id','id']);
+  });
+  await db.schema.createTable('sdj_documents', t => {
+    t.bigIncrements('id');
+    t.uuid('reference').notNullable().unique();
+    t.text('number').notNullable().unique();
+    t.bigInteger('branch_id').notNullable().references('branches.id');
+    t.bigInteger('order_id').notNullable().references('sdj_order_workflows.id');
+    t.bigInteger('actor_id').notNullable().references('users.id');
+    t.text('type').notNullable();
+    t.uuid('request_id').notNullable();
+    t.text('request_hash').notNullable();
+    t.decimal('amount',24,2).notNullable().defaultTo(0);
+    t.jsonb('snapshot').notNullable();
+    t.timestamp('created_at',{useTz:true}).notNullable().defaultTo(db.fn.now());
+    t.unique(['branch_id','request_id']);
+    t.index(['branch_id','order_id','id']);
+  });
+  await db.raw("CREATE UNIQUE INDEX sdj_one_invoice ON sdj_documents (order_id) WHERE type = 'invoice'");
+  await db.schema.createTable('sdj_material_balances', t => {
+    t.bigIncrements('id');
+    t.bigInteger('order_id').notNullable().references('sdj_order_workflows.id');
+    t.text('code').notNullable();
+    t.text('owner').notNullable().checkIn(['shop','customer']);
+    t.text('kind').notNullable().checkIn(['metal','stone']);
+    t.decimal('fineness',7,6);
+    t.decimal('issued',24,6).notNullable();
+    t.decimal('used',24,6).notNullable().defaultTo(0);
+    t.decimal('returned',24,6).notNullable().defaultTo(0);
+    t.decimal('lost',24,6).notNullable().defaultTo(0);
+    t.integer('issued_pieces').notNullable();
+    t.integer('used_pieces').notNullable().defaultTo(0);
+    t.integer('returned_pieces').notNullable().defaultTo(0);
+    t.integer('lost_pieces').notNullable().defaultTo(0);
+    t.unique(['order_id','code','owner']);
+  });
+};
+exports.down = () => { throw new Error('Restore a backup to revert transactional changes'); };
